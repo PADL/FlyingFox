@@ -36,11 +36,7 @@ import Foundation
 @available(*, deprecated, message: "Use JSONBodyPattern")
 public struct JSONPredicatePattern: HTTPBodyPattern {
 
-    #if compiler(>=6)
     nonisolated(unsafe) private var predicate: NSPredicate
-    #else
-    @NonisolatedUnsafe private var predicate: NSPredicate
-    #endif
 
     public init(_ predicate: NSPredicate) {
         self.predicate = predicate

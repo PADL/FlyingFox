@@ -241,11 +241,11 @@ private extension Poll {
     }
 
     func getEvents() async throws -> [EventNotification] {
-        let queue = UncheckedSendable(wrappedValue: self)
+        nonisolated(unsafe) let queue = self
         return try await withCheckedThrowingContinuation { continuation in
             DispatchQueue.global().async {
                 let result = Result {
-                    try queue.wrappedValue.getNotifications()
+                    try queue.getNotifications()
                 }
                 continuation.resume(with: result)
             }

@@ -29,8 +29,6 @@
 //  SOFTWARE.
 //
 
-#if compiler(>=6)
-
 #if !canImport(WinSDK)
 
 // Backports the Swift 6 type Mutex<Value> to all Darwin platforms
@@ -215,5 +213,3 @@ package extension Mutex where Value: Sendable & Copyable {
         withLock { $0 }
     }
 }
-
-#endif

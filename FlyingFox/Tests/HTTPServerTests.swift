@@ -622,11 +622,8 @@ extension URLSessionWebSocketTask.Message {
         }
     }
 }
-#if compiler(>=6)
+
 extension URLSessionWebSocketTask.Message: @retroactive Equatable { }
-#else
-extension URLSessionWebSocketTask.Message: Equatable { }
-#endif
 #endif
 
 extension Task where Success == Never, Failure == Never {
