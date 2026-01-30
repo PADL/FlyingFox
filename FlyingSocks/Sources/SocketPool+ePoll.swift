@@ -117,16 +117,22 @@ public struct ePoll: EventQueue {
 
         if currentEvents != nil {
             if events.isEmpty {
-                guard epoll_ctl(file.rawValue, EPOLL_CTL_DEL, socket.rawValue, &event) != -1 else {
+                if epoll_ctl(file.rawValue, EPOLL_CTL_DEL, socket.rawValue, &event) == -1 {
+                    if errnoSignalsDisconnected() {
+                        existing[socket] = nil
+                    }
                     throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_DEL")
                 }
             } else {
-                guard epoll_ctl(file.rawValue, EPOLL_CTL_MOD, socket.rawValue, &event) != -1 else {
+                if epoll_ctl(file.rawValue, EPOLL_CTL_MOD, socket.rawValue, &event) == -1 {
+                    if errnoSignalsDisconnected() {
+                        existing[socket] = nil
+                    }
                     throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_MOD")
                 }
             }
         } else if !events.isEmpty {
-            guard epoll_ctl(file.rawValue, EPOLL_CTL_ADD, socket.rawValue, &event) != -1 else {
+            if epoll_ctl(file.rawValue, EPOLL_CTL_ADD, socket.rawValue, &event) == -1 {
                 throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_ADD")
             }
         }

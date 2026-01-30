@@ -224,12 +224,21 @@ public final actor SocketPool<Queue: EventQueue>: AsyncSocketPool {
         with result: Result<Void, any Swift.Error>,
         for socket: Socket.FileDescriptor
     ) {
-        do {
-            let events = waiting.resumeContinuation(id: id, with: result, for: socket)
-            try queue.removeEvents(events, for: socket)
-        } catch {
-            logger.logError("resumeContinuation queue.removeEvents: \(error.localizedDescription)")
-        }
+        // Don't remove events from epoll when continuations are resumed.
+        // With edge-triggered epoll, removing and re-adding events on every I/O
+        // operation re-arms the edge trigger, causing immediate wakeups and busy loops.
+        //
+        // For HTTP listening sockets, this was causing 30%+ CPU:
+        //   1. Wait for accept -> addEvents([.read])
+        //   2. Accept connection -> removeEvents([.read])
+        //   3. Loop -> addEvents([.read]) re-arms edge
+        //   4. If accept queue not empty -> immediate wakeup -> busy loop
+        //
+        // Keep events registered until socket is closed. The kernel automatically
+        // removes closed fds from epoll. Cleanup of the existing[] map happens via:
+        //   - epoll_ctl errors (EBADF) -> cleaned in setEvents
+        //   - fd reuse -> old entries overwritten
+        _ = waiting.resumeContinuation(id: id, with: result, for: socket)
     }
 
     private struct Error: LocalizedError {
