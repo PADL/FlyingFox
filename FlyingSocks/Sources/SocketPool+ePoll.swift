@@ -97,30 +97,34 @@ public struct ePoll: EventQueue {
     }
 
     public mutating func removeEvents(_ events: Socket.Events, for socket: Socket.FileDescriptor) throws {
-        var socketEvents = existing[socket] ?? []
-        for evt in events {
-            socketEvents.remove(evt)
-        }
-        try setEvents(socketEvents, for: socket)
+        // For edge-triggered epoll, don't remove events when continuations resume.
+        // Removing and re-adding events re-arms the edge trigger, causing busy loops.
+        // Keep events registered until socket is closed (kernel auto-removes closed fds).
+        // If events need to change, addEvents() will call setEvents() with EPOLL_CTL_MOD.
     }
 
     mutating func setEvents(_ events: Socket.Events, for socket: Socket.FileDescriptor) throws {
+        let existingEvents = existing[socket]
+        guard existingEvents != events else { return } // don't re-arm if events are unchanged
+
         var event = CSystemLinux.epoll_event()
         event.events = events.epollEvents.rawValue
         event.data.fd = socket.rawValue
 
-        if existing[socket] != nil {
+        if existingEvents != nil {
             if events.isEmpty {
-                guard epoll_ctl(file.rawValue, EPOLL_CTL_DEL, socket.rawValue, &event) != -1 else {
+                if epoll_ctl(file.rawValue, EPOLL_CTL_DEL, socket.rawValue, &event) == -1 {
+                    if errnoSignalsDisconnected() { existing[socket] = nil }
                     throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_DEL")
                 }
             } else {
-                guard epoll_ctl(file.rawValue, EPOLL_CTL_MOD, socket.rawValue, &event) != -1 else {
+                if epoll_ctl(file.rawValue, EPOLL_CTL_MOD, socket.rawValue, &event) == -1 {
+                    if errnoSignalsDisconnected() { existing[socket] = nil }
                     throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_MOD")
                 }
             }
         } else if !events.isEmpty {
-            guard epoll_ctl(file.rawValue, EPOLL_CTL_ADD, socket.rawValue, &event) != -1 else {
+            if epoll_ctl(file.rawValue, EPOLL_CTL_ADD, socket.rawValue, &event) == -1 {
                 throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_ADD")
             }
         }
@@ -242,7 +246,7 @@ private struct EPOLLEvents: OptionSet, Hashable {
 private extension Socket.Events {
 
     var epollEvents: EPOLLEvents {
-        reduce(EPOLLEvents()) { [$0, $1.epollEvent] }
+        reduce(EPOLLEvents()) { [$0, $1.epollEvent] }.union(.edgeTriggered)
     }
 
     static func make(from pollevents: EPOLLEvents) -> Socket.Events {
