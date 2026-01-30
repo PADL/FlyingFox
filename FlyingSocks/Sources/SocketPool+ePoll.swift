@@ -242,7 +242,9 @@ private struct EPOLLEvents: OptionSet, Hashable {
 private extension Socket.Events {
 
     var epollEvents: EPOLLEvents {
-        reduce(EPOLLEvents()) { [$0, $1.epollEvent] }
+        var events = reduce(EPOLLEvents()) { [$0, $1.epollEvent] }
+        events.insert(.edgeTriggered)
+        return events
     }
 
     static func make(from pollevents: EPOLLEvents) -> Socket.Events {
