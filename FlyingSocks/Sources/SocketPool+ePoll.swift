@@ -105,11 +105,17 @@ public struct ePoll: EventQueue {
     }
 
     mutating func setEvents(_ events: Socket.Events, for socket: Socket.FileDescriptor) throws {
+        // Skip epoll_ctl if events haven't changed to avoid re-arming edge-triggered events
+        let currentEvents = existing[socket]
+        if currentEvents == events {
+            return
+        }
+
         var event = CSystemLinux.epoll_event()
         event.events = events.epollEvents.rawValue
         event.data.fd = socket.rawValue
 
-        if existing[socket] != nil {
+        if currentEvents != nil {
             if events.isEmpty {
                 guard epoll_ctl(file.rawValue, EPOLL_CTL_DEL, socket.rawValue, &event) != -1 else {
                     throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_DEL")
