@@ -32,6 +32,14 @@
 #if canImport(CSystemLinux)
 import CSystemLinux
 
+#if canImport(Musl)
+import Musl
+#elseif canImport(Bionic)
+import Android
+#else
+import Glibc
+#endif
+
 public extension AsyncSocketPool where Self == SocketPool<ePoll> {
     static func ePoll(maxEvents limit: Int = 20, logger: some Logging = .disabled) -> SocketPool<ePoll> {
         .init(maxEvents: limit, logger: logger)
@@ -111,16 +119,19 @@ public struct ePoll: EventQueue {
 
         if existing[socket] != nil {
             if events.isEmpty {
-                guard epoll_ctl(file.rawValue, EPOLL_CTL_DEL, socket.rawValue, &event) != -1 else {
+                if epoll_ctl(file.rawValue, EPOLL_CTL_DEL, socket.rawValue, &event) == -1 {
+                    if errno == ENOENT || errno == EBADF { existing[socket] = nil }
                     throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_DEL")
                 }
             } else {
-                guard epoll_ctl(file.rawValue, EPOLL_CTL_MOD, socket.rawValue, &event) != -1 else {
+                if epoll_ctl(file.rawValue, EPOLL_CTL_MOD, socket.rawValue, &event) == -1 {
+                    if errno == ENOENT || errno == EBADF { existing[socket] = nil }
+                    if errno == ENOENT { return }
                     throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_MOD")
                 }
             }
         } else if !events.isEmpty {
-            guard epoll_ctl(file.rawValue, EPOLL_CTL_ADD, socket.rawValue, &event) != -1 else {
+            if epoll_ctl(file.rawValue, EPOLL_CTL_ADD, socket.rawValue, &event) == -1 {
                 throw SocketError.makeFailed("epoll_ctl EPOLL_CTL_ADD")
             }
         }
