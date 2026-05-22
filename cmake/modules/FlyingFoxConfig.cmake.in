@@ -1,0 +1,14 @@
+#[[
+This source file is part of the FlyingFox open source project
+
+Copyright (c) 2024 Simon Whitty and the FlyingFox project authors
+Licensed under MIT License
+
+See https://github.com/swhitty/FlyingFox/blob/main/LICENSE for license information
+#]]
+
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/FlyingFoxTargets.cmake")
+
+check_required_components(FlyingFox)
