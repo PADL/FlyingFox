@@ -46,9 +46,38 @@ struct WSFrameSequenceTests {
         #expect(
             try await AsyncThrowingStream.make([.close]).collectAll() == [.close]
         )
+        // Decoding preserves the mask of a masked frame (RFC 6455 §5.1) while
+        // storing the payload unmasked.
+        #expect(
+            try await AsyncThrowingStream.make([.fish.masked()]).collectAll() == [.fish.masked()]
+        )
         #expect(
             try await AsyncThrowingStream.make([]).collectAll() == []
         )
+    }
+
+    @Test
+    func clientSequence_DeliversMaskedFramesUnmasked() async throws {
+        // Masked client frames reach handlers with the payload decoded and the
+        // mask cleared (RFC 6455 §5.1); a clean disconnect ends the stream
+        // without error.
+        #expect(
+            try await AsyncThrowingStream.makeClient([.fish.masked(), .chips.masked()]).collectAll() == [
+                .fish, .chips
+            ]
+        )
+        #expect(
+            try await AsyncThrowingStream.makeClient([]).collectAll() == []
+        )
+    }
+
+    @Test
+    func clientSequence_RejectsUnmaskedFrames() async {
+        // RFC 6455 §5.1: an unmasked client frame fails the stream — the error
+        // must not be normalized away like a disconnect.
+        await #expect(throws: WSFrameEncoder.Error.self) {
+            try await AsyncThrowingStream.makeClient([.fish]).collectAll()
+        }
     }
 
     @Test
@@ -79,6 +108,11 @@ extension AsyncThrowingStream where Element == WSFrame, Failure == any Error {
     static func make(_ frames: [WSFrame]) -> Self {
         let bytes = ConsumingAsyncSequence(frames.flatMap(WSFrameEncoder.encodeFrame))
         return AsyncThrowingStream.decodingFrames(from: bytes)
+    }
+
+    static func makeClient(_ frames: [WSFrame]) -> Self {
+        let bytes = ConsumingAsyncSequence(frames.flatMap(WSFrameEncoder.encodeFrame))
+        return AsyncThrowingStream.decodingClientFrames(from: bytes)
     }
 }
 

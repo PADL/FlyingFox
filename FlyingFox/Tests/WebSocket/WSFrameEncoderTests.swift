@@ -153,6 +153,43 @@ struct WSFrameEncoderTests {
     }
 
     @Test
+    func decodeFrame_PreservesMask() async throws {
+        // RFC 6455 §5.1 — the mask is preserved so servers can detect unmasked
+        // client frames; the payload is stored unmasked.
+        // "Abc" masked with 0x1 0x2 0x3 0x4 → 0x40 0x60 0x60.
+        #expect(
+            try await WSFrameEncoder.decodeFrame(0b10000001, 0b10000011, 0x1, 0x2, 0x3, 0x4, 0x40, 0x60, 0x60) == .make(
+                fin: true,
+                opcode: .text,
+                mask: .mock,
+                payload: "Abc".data(using: .utf8)!
+            )
+        )
+    }
+
+    @Test
+    func decodeClientFrame_ThrowsWhenUnmasked() async {
+        // RFC 6455 §5.1: "The server MUST close the connection upon receiving
+        // a frame that is not masked."
+        await #expect(throws: WSFrameEncoder.Error.self) {
+            try await WSFrameEncoder.decodeClientFrame(0b10000001, 3, .ascii("A"), .ascii("b"), .ascii("c"))
+        }
+    }
+
+    @Test
+    func decodeClientFrame_ClearsMask() async throws {
+        // Handlers observe unmasked frames so they can safely echo them —
+        // "A server MUST NOT mask any frames that it sends to the client." (§5.1)
+        #expect(
+            try await WSFrameEncoder.decodeClientFrame(0b10000001, 0b10000011, 0x1, 0x2, 0x3, 0x4, 0x40, 0x60, 0x60) == .make(
+                fin: true,
+                opcode: .text,
+                payload: "Abc".data(using: .utf8)!
+            )
+        )
+    }
+
+    @Test
     func decodeFrame0() {
         #expect(
             WSFrameEncoder.decodeFrame(from: 0b10000000) == .make(
@@ -416,6 +453,10 @@ private extension WSFrameEncoder {
 
     static func decodeFrame(_ bytes: UInt8...) async throws -> WSFrame {
         try await decodeFrame(from: ConsumingAsyncSequence(bytes))
+    }
+
+    static func decodeClientFrame(_ bytes: UInt8...) async throws -> WSFrame {
+        try await decodeClientFrame(from: ConsumingAsyncSequence(bytes))
     }
 
     static func decodeLength(_ bytes: UInt8...) async throws -> Int {

@@ -44,6 +44,21 @@ extension AsyncThrowingStream<WSFrame, any Error> {
             }
         }
     }
+
+    /// Decodes client → server frames via `WSFrameEncoder.decodeClientFrame(from:)`,
+    /// throwing when a frame is unmasked (RFC 6455 §5.1). A clean disconnect
+    /// ends the stream without error.
+    static func decodingClientFrames(from bytes: some AsyncBufferedSequence<UInt8>) -> Self {
+        AsyncThrowingStream<WSFrame, any Error> {
+            do {
+                return try await WSFrameEncoder.decodeClientFrame(from: bytes)
+            } catch SocketError.disconnected, is SequenceTerminationError {
+                return nil
+            } catch {
+                throw error
+            }
+        }
+    }
 }
 
 extension AsyncStream<WSFrame> {

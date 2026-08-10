@@ -70,7 +70,33 @@ struct WSFrameEncoder {
     static func decodeFrame(from bytes: some AsyncBufferedSequence<UInt8>) async throws -> WSFrame {
         var frame = try await decodeFrame(from: bytes.take())
         let (length, mask) = try await decodeLengthMask(from: bytes)
+        // The payload is stored unmasked; the mask is preserved so servers can
+        // enforce RFC 6455 §5.1 — "a client MUST mask all frames that it sends
+        // to the server."
+        frame.mask = mask
         frame.payload = try await decodePayload(from: bytes, length: length, mask: mask)
+        return frame
+    }
+
+    /// Decodes a single client → server frame, enforcing RFC 6455 §5.1:
+    /// "a client MUST mask all frames that it sends to the server. ...
+    /// The server MUST close the connection upon receiving a frame that is
+    /// not masked."
+    ///
+    /// The error thrown for an unmasked frame surfaces through the client
+    /// frame stream received by `WSHandler`, which is responsible for
+    /// terminating the connection — `MessageFrameWSHandler` responds with a
+    /// 1002 (protocol error) close frame.
+    ///
+    /// The mask is cleared on the returned frame so handlers can safely echo
+    /// frames (e.g. ping → pong) — "A server MUST NOT mask any frames that it
+    /// sends to the client." (§5.1)
+    static func decodeClientFrame(from bytes: some AsyncBufferedSequence<UInt8>) async throws -> WSFrame {
+        var frame = try await decodeFrame(from: bytes)
+        guard frame.mask != nil else {
+            throw Error("Incoming client frames must be masked")
+        }
+        frame.mask = nil
         return frame
     }
 
