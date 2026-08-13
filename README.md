@@ -93,7 +93,7 @@ They can also be added to closures:
 
 ```swift
 await server.appendRoute("/hello") { request in
-  try await Task.sleep(nanoseconds: 1_000_000_000)
+  try await Task.sleep(for: .seconds(1))
   return HTTPResponse(statusCode: .ok)
 }
 ```
