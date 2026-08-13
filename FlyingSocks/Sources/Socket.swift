@@ -679,7 +679,7 @@ private extension SocketAddress {
 }
 
 #if !canImport(WinSDK)
-fileprivate extension Socket {
+extension Socket {
     // https://github.com/swiftlang/swift-evolution/blob/main/proposals/0138-unsaferawbufferpointer.md
     private static func withControlMessage(
         control: UnsafeRawPointer,
@@ -713,7 +713,7 @@ fileprivate extension Socket {
         }
     }
 
-    static func getPacketInfoControl(
+    fileprivate static func getPacketInfoControl(
         msghdr: msghdr
     ) -> (UInt32?, sockaddr_storage?) {
         var interfaceIndex: UInt32?
@@ -745,6 +745,8 @@ fileprivate extension Socket {
         return (interfaceIndex, interfaceIndex != nil ? localAddress : nil)
     }
 
+    // Internal (not fileprivate) so SocketTests can assert the control-message
+    // level/type contract without a live socket.
     static func withPacketInfoControl<T>(
         family: sa_family_t,
         interfaceIndex: UInt32?,
@@ -756,8 +758,13 @@ fileprivate extension Socket {
             let buffer = ManagedBuffer<cmsghdr, in_pktinfo>.create(minimumCapacity: 1) { buffer in
                 buffer.withUnsafeMutablePointers { header, element in
                     header.pointee.cmsg_len = ControlMessageHeaderLengthType(MemoryLayout<cmsghdr>.size + MemoryLayout<in_pktinfo>.size)
-                    header.pointee.cmsg_level = SOL_SOCKET
-                    header.pointee.cmsg_type = Socket.ipproto_ip
+                    // An IP_PKTINFO ancillary message is at the IPPROTO_IP
+                    // cmsg level — ip(7): "Pass an IP_PKTINFO ancillary
+                    // message ... sent/retrieved only as a control message
+                    // with a packet using recvmsg(2) or sendmsg(2)". Must
+                    // match getPacketInfoControl above.
+                    header.pointee.cmsg_level = Socket.ipproto_ip
+                    header.pointee.cmsg_type = Socket.ip_pktinfo
                     element.pointee.ipi_ifindex = IPv4InterfaceIndexType(interfaceIndex ?? 0)
                     if let address {
                         var address = address
@@ -779,8 +786,11 @@ fileprivate extension Socket {
             let buffer = ManagedBuffer<cmsghdr, in6_pktinfo>.create(minimumCapacity: 1) { buffer in
                 buffer.withUnsafeMutablePointers { header, element in
                     header.pointee.cmsg_len = ControlMessageHeaderLengthType(MemoryLayout<cmsghdr>.size + MemoryLayout<in6_pktinfo>.size)
-                    header.pointee.cmsg_level = SOL_SOCKET
-                    header.pointee.cmsg_type = Socket.ipproto_ipv6
+                    // RFC 3542 §6: "the socket option and cmsghdr level will
+                    // be IPPROTO_IPV6, the type will be IPV6_PKTINFO". Must
+                    // match getPacketInfoControl above.
+                    header.pointee.cmsg_level = Socket.ipproto_ipv6
+                    header.pointee.cmsg_type = Socket.ipv6_pktinfo
                     element.pointee.ipi6_ifindex = IPv6InterfaceIndexType(interfaceIndex ?? 0)
                     if let address {
                         var address = address

@@ -377,6 +377,49 @@ struct SocketTests {
             try socket.getValue(for: .packetInfoIPv6) == true
         )
     }
+
+    #if !canImport(WinSDK)
+    @Test
+    func withPacketInfoControl_IP4_SetsPktInfoLevelAndType() {
+        // TVT-1064 regression: cmsg_level must identify the originating
+        // protocol and cmsg_type the protocol-specific option — not
+        // SOL_SOCKET with a protocol number in the type field. macOS SDK
+        // <netinet/in.h>: "#define IP_PKTINFO 26 /* get pktinfo on recv
+        // socket, set src on sent dgram */"; ip(7) on Linux.
+        let (level, type) = Socket.withPacketInfoControl(
+            family: sa_family_t(AF_INET),
+            interfaceIndex: nil,
+            address: nil
+        ) { header, _ in
+            (header?.pointee.cmsg_level, header?.pointee.cmsg_type)
+        }
+        #expect(level == Int32(IPPROTO_IP))
+        #expect(type == Int32(IP_PKTINFO))
+    }
+
+    @Test
+    func withPacketInfoControl_IP6_SetsPktInfoLevelAndType() {
+        // TVT-1064 regression: RFC 3542 §6 — "the socket option and cmsghdr
+        // level will be IPPROTO_IPV6, the type will be IPV6_PKTINFO".
+        // The non-nil address exercises the source-address copy branch.
+        let (level, type) = Socket.withPacketInfoControl(
+            family: sa_family_t(AF_INET6),
+            interfaceIndex: nil,
+            address: sockaddr_in6.loopback(port: 0)
+        ) { header, _ in
+            (header?.pointee.cmsg_level, header?.pointee.cmsg_type)
+        }
+        #expect(level == Int32(IPPROTO_IPV6))
+        #if canImport(Darwin)
+        // macOS SDK <netinet6/in6.h>: "#define IPV6_3542PKTINFO 46
+        // /* in6_pktinfo; send if, src addr */". IPV6_PKTINFO is gated
+        // behind __APPLE_USE_RFC_3542, which Swift cannot define.
+        #expect(type == 46)
+        #else
+        #expect(type == Int32(IPV6_PKTINFO))
+        #endif
+    }
+    #endif
 }
 
 extension Socket.Flags {
