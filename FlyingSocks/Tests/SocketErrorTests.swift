@@ -36,6 +36,17 @@ import Testing
 struct SocketErrorTests {
 
     @Test
+    func acceptErrors_ThatLeaveTheListenerUsable_AreTransient() {
+        #expect(SocketError.failed(type: "Accept", errno: EMFILE, message: "").isTransientAcceptError)
+        #expect(SocketError.failed(type: "Accept", errno: ECONNABORTED, message: "").isTransientAcceptError)
+        #expect(SocketError.failed(type: "Accept", errno: EMFILE, message: "").isResourceShortage)
+        #expect(!SocketError.failed(type: "Accept", errno: ECONNABORTED, message: "").isResourceShortage)
+        #expect(!SocketError.failed(type: "Accept", errno: EBADF, message: "").isTransientAcceptError)
+        #expect(!SocketError.failed(type: "Read", errno: EMFILE, message: "").isTransientAcceptError)
+        #expect(!SocketError.disconnected.isTransientAcceptError)
+    }
+
+    @Test
     func socketError_errorDescription() {
 
         let failedType = "failed"

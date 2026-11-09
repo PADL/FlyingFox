@@ -74,3 +74,30 @@ public enum SocketError: LocalizedError, Equatable {
                 message: String(cString: strerror(errno)))
     }
 }
+
+extension SocketError {
+
+    /// A failed accept(2) that leaves the listening socket usable: the next accept may succeed.
+    var isTransientAcceptError: Bool {
+        guard case .failed(let type, let errno, _) = self, type == "Accept" else { return false }
+        return Self.transientAcceptErrors.contains(errno)
+    }
+
+    /// A transient accept failure for want of descriptors or memory, which accepting again at
+    /// once would only repeat.
+    var isResourceShortage: Bool {
+        guard case .failed(_, let errno, _) = self else { return false }
+        return [EMFILE, ENFILE, ENOBUFS, ENOMEM].contains(errno)
+    }
+
+    // accept(2): a connection aborted or failed before it was accepted, a signal, or a
+    // shortage of descriptors or memory; on Linux, pending network errors are also reported
+    // by accept and are to be treated like EAGAIN
+    private static var transientAcceptErrors: Set<Int32> {
+        var errors: Set<Int32> = [ECONNABORTED, EINTR, EMFILE, ENFILE, ENOBUFS, ENOMEM]
+        #if !canImport(WinSDK)
+        errors.formUnion([EPROTO, ENETDOWN, ENETUNREACH, EHOSTDOWN, EHOSTUNREACH, ENOPROTOOPT, EOPNOTSUPP])
+        #endif
+        return errors
+    }
+}

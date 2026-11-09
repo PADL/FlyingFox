@@ -373,12 +373,19 @@ public struct AsyncSocketSequence: AsyncSequence, AsyncIteratorProtocol, Sendabl
     public func makeAsyncIterator() -> AsyncSocketSequence { self }
 
     public mutating func next() async throws -> AsyncSocket? {
-        do {
-            return try await socket.accept()
-        } catch SocketError.disconnected {
-            return nil
-        } catch {
-            throw error
+        while true {
+            do {
+                return try await socket.accept()
+            } catch SocketError.disconnected {
+                return nil
+            } catch let error as SocketError where error.isTransientAcceptError {
+                // the listener is sound: a connection was lost before it could be accepted,
+                // or descriptors or memory ran short for a moment, so wait a little and go on
+                // rather than end the sequence, and with it every connection served from it
+                if error.isResourceShortage {
+                    try await Task.sleep(nanoseconds: 100_000_000)
+                }
+            }
         }
     }
 }
