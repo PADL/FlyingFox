@@ -120,6 +120,30 @@ struct HTTPConnectionTests {
     }
 
     @Test
+    func connectionTunnel_ReceivesBytesSentWithTheRequest() async throws {
+        let (s1, s2) = try await AsyncSocket.makePair()
+
+        let connection = HTTPConnection(socket: s1)
+        // the client sends its first bytes before the response, as an APC may
+        try await s2.writeString("CONNECT / HTTP/1.1\r\nHost: example:17221\r\n\r\nping")
+        let request = try await connection.requests.first()
+        #expect(request.method == .CONNECT)
+
+        let task = Task {
+            try await connection.sendResponse(HTTPResponse(tunnel: EchoTunnelHandler()))
+        }
+        let response = try await s2.readString(length: 19)
+        #expect(response == "HTTP/1.1 200 OK\r\n\r\n")
+        #expect(try await s2.readString(length: 4) == "ping")
+        try await s2.writeString("pong")
+        #expect(try await s2.readString(length: 4) == "pong")
+
+        try s2.close()
+        try await task.value
+        try s1.close()
+    }
+
+    @Test
     func connectionDisconnects_WhenErrorIsReceived() async throws {
         let (s1, s2) = try await AsyncSocket.makePair()
 
@@ -176,5 +200,19 @@ extension HTTPRequest {
                lhs.query == rhs.query &&
                lhs.headers == rhs.headers &&
                lhsData == rhsData
+    }
+}
+
+/// Writes back what the client sends until it closes.
+private struct EchoTunnelHandler: HTTPTunnelHandler {
+    func handleTunnel(bytes: some AsyncBufferedSequence<UInt8>, socket: AsyncSocket) async throws {
+        var iterator = bytes.makeAsyncIterator()
+        do {
+            while let buffer = try await iterator.nextBuffer(suggested: 64) {
+                try await socket.write(Data(buffer))
+            }
+        } catch SocketError.disconnected {
+            // the client has gone
+        }
     }
 }
